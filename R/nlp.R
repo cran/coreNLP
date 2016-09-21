@@ -18,6 +18,7 @@ volatiles = new.env(parent=emptyenv())
 #'                       version number. If missing, the function will try to find the
 #'                       library in the environment variable CORENLP_HOME, and otherwise
 #'                       will fail.
+#' @param type           type of model to load. Ignored if parameterFile is set.
 #' @param parameterFile  the path to a parameter file. See the CoreNLP documentation for
 #'                       an extensive list of options. If missing, the package will simply
 #'                       specify a list of standard annotators and otherwise only use default
@@ -29,10 +30,6 @@ volatiles = new.env(parent=emptyenv())
 #'                       "1800m" may also work. This option will only have an effect the first
 #'                       time \code{initCoreNLP} is called, and also will not have an effect if
 #'                       the java engine is already started by a seperate process.
-#' @param annotators     optional character string. When parameterFile is missing, this
-#'                       is taken to be the list of annotators that you want to run. Either
-#'                       a length one character vector with annotator names seperated by
-#'                       commas, or a character vector with one annotator per element.
 #'@examples
 #'\dontrun{
 #'initCoreNLP()
@@ -40,11 +37,12 @@ volatiles = new.env(parent=emptyenv())
 #'annoObj <- annotateString(sIn)
 #'}
 #' @export
-initCoreNLP = function(libLoc, parameterFile, mem="4g", annotators) {
+initCoreNLP = function(libLoc, type = c("english", "english_all", "english_fast", "arabic", "chinese", "french", "german", "spanish"),
+      parameterFile = NULL, mem = "4g") {
   # Find location of the CoreNLP Libraries
   if (missing(libLoc)) {
     libLoc = paste0(system.file("extdata",package="coreNLP"),
-                    "/stanford-corenlp-full-2015-04-20")
+                    "/stanford-corenlp-full-2015-12-09")
     if (!file.exists(libLoc))
       stop("Please run downloadCoreNLP() in order to install required jar files.")
   }
@@ -65,23 +63,26 @@ initCoreNLP = function(libLoc, parameterFile, mem="4g", annotators) {
     warning("The set of coreNLP jar files may be incomplete. Proceed with caution")
 
   # Read parameter file and add to classpath
-  if (missing(parameterFile)) {
-    path = paste0(system.file("extdata",package="coreNLP"),"/config.properties")
-  } else path = Sys.glob(paste0(parameterFile[[1]]))
+  if (is.null(parameterFile)) {
+    type = match.arg(type)
+    basepath = system.file("extdata",package="coreNLP")
+    if (type == "english") path = sprintf("%s/%s", basepath, "/StanfordCoreNLP.properties")
+    if (type == "english_all") path = sprintf("%s/%s", basepath, "/StanfordCoreNLP-english-all.properties")
+    if (type == "english_fast") path = sprintf("%s/%s", basepath, "/StanfordCoreNLP-english-fast.properties")
+    if (type == "arabic") path = sprintf("%s/%s", basepath, "/StanfordCoreNLP-arabic.properties")
+    if (type == "chinese") path = sprintf("%s/%s", basepath, "/StanfordCoreNLP-chinese.properties")
+    if (type == "french") path = sprintf("%s/%s", basepath, "/StanfordCoreNLP-french.properties")
+    if (type == "german") path = sprintf("%s/%s", basepath, "/StanfordCoreNLP-german.properties")
+    if (type == "spanish") path = sprintf("%s/%s", basepath, "/StanfordCoreNLP-spanish.properties")
+  } else {
+    path = Sys.glob(paste0(parameterFile[[1]]))
+  }
   rJava::.jaddClassPath(dirname(path))
 
   if (!is.null(volatiles$cNLP))
     rJava::.jcall(volatiles$cNLP, "V", "clearAnnotatorPool")
 
-  if (!missing(annotators) & missing(parameterFile)) {
-    annotators = paste(annotators,collapse=",")
-    prop = rJava::.jnew("java.util.Properties")
-    rJava::.jcall(prop, "Ljava/lang/Object;", "setProperty", "annotators", annotators)
-    volatiles$cNLP = rJava::.jnew("edu.stanford.nlp.pipeline.StanfordCoreNLP", prop)
-  } else {
-    volatiles$cNLP = rJava::.jnew("edu.stanford.nlp.pipeline.StanfordCoreNLP", basename(path))
-  }
-
+  volatiles$cNLP = rJava::.jnew("edu.stanford.nlp.pipeline.StanfordCoreNLP", basename(path))
   volatiles$xmlOut = rJava::.jnew("edu.stanford.nlp.pipeline.XMLOutputter")
 }
 
@@ -324,6 +325,20 @@ getCoreference = function(annotation) {
   coref
 }
 
+#' Get OpenIE
+#'
+#' Returns a dataframe containing all OpenIE triples.
+#'
+#' @param annotation    an annotation object
+#'
+#'@examples
+#'getOpenIE(annoHp)
+#'
+#' @export
+getOpenIE = function(annotation) {
+  annotation$openie
+}
+
 #' Load CoreNLP XML file
 #'
 #' Loads a properly formated XML file output by the CoreNLP
@@ -385,7 +400,7 @@ universalTagset = function(pennPOS) {
 #' Returns an annotation object from a character vector containing
 #' the xml. Not exported; use \code{loadXMLAnnotation} instead.
 #'
-#' @importFrom   XML xmlRoot xmlParse xmlToDataFrame xmlChildren xmlAttrs
+#' @importFrom   XML xmlRoot xmlParse xmlToDataFrame xmlChildren xmlAttrs xmlValue
 #' @param xml    character vector containing the xml file from an annotation
 parseAnnoXML = function(xml) {
   xml = XML::xmlRoot(XML::xmlParse(xml))[[1]]
@@ -393,8 +408,8 @@ parseAnnoXML = function(xml) {
   xml = xml[[1]]
   sentences = XML::xmlChildren(xml)
 
-  out = list(token=NULL,parse=NULL,basicDep=NULL,collapsedDep=NULL,
-              collapsedProcDep=NULL, coref=NULL)
+  out = list(token = NULL,parse = NULL,basicDep = NULL,collapsedDep = NULL,
+              collapsedProcDep = NULL, coref = NULL, openie = NULL)
 
   if (length(sentences)==0L) {
     class(out) = "annotation"
@@ -407,6 +422,9 @@ parseAnnoXML = function(xml) {
                "dependentIdx")
   corefNames = c("corefId", "sentence", "start", "end", "head", "text")
   sentNames = c("id", "sentimentValue", "sentiment")
+  openieNames = c("subject_start", "subject_end", "subject",
+                  "relation_start", "relation_end", "relation",
+                  "object_start", "object_end", "object")
 
   for (i in 1:length(sentences)) {
     sent = sentences[[i]]
@@ -416,17 +434,31 @@ parseAnnoXML = function(xml) {
     index = match(tokenNames, names(df))
     if (length(index) != ncol(df)) df = df[,index[!is.na(index)]]
     if (any(is.na(index))) df = fillDF(df, tokenNames)
+    df = df[,tokenNames]
 
     out$token = rbind(out$token, df)
 
-    if (!is.null(sent[[2L]]))
-      out$parse = c(out$parse, XML::xmlValue(sent[[2]]))
+    elementNames <- names(XML::xmlChildren(sent))
+    elementAttributes <- sapply(XML::xmlChildren(sent),
+        function(v) {v <- as.character(XML::xmlAttrs(v)['type']); if (length(v)) v else "" })
+    names(elementAttributes) <- NULL
 
-    if (!is.null(sent[[3L]]) && length(XML::xmlToDataFrame(sent[[3L]]))) {
-      df = data.frame(sentence=i, XML::xmlToDataFrame(sent[[3L]],stringsAsFactors=FALSE),
-                type=sapply(XML::xmlChildren(sent[[3L]]),function(v) XML::xmlAttrs(v)[[1]]),
-                governorIdx=sapply(XML::xmlChildren(sent[[3L]]), function(v) XML::xmlAttrs(v[[1]])[1]),
-                dependentIdx=sapply(XML::xmlChildren(sent[[3L]]), function(v) XML::xmlAttrs(v[[2]])[1]),
+
+    parseIndex <- which(elementNames == "parse" & elementAttributes == "")[1]
+    basicDepIndex <- which(elementNames == "dependencies" & elementAttributes == "basic-dependencies")[1]
+    collapsedDepIndex <- which(elementNames == "dependencies" & elementAttributes == "collapsed-dependencies")[1]
+    collapsedProcDepIndex <- which(elementNames == "dependencies" & elementAttributes == "collapsed-ccprocessed-dependencies")[1]
+    openieIndex <- which(elementNames == "openie" & elementAttributes == "")[1]
+    machineReadingIndex <- which(elementNames == "MachineReading" & elementAttributes == "")[1]
+
+    if (!is.na(parseIndex))
+      out$parse = c(out$parse, XML::xmlValue(sent[[parseIndex]]))
+
+    if (!is.na(basicDepIndex) && length(XML::xmlToDataFrame(sent[[basicDepIndex]]))) {
+      df = data.frame(sentence=i, XML::xmlToDataFrame(sent[[basicDepIndex]],stringsAsFactors=FALSE),
+                type=sapply(XML::xmlChildren(sent[[basicDepIndex]]),function(v) XML::xmlAttrs(v)[[1]]),
+                governorIdx=sapply(XML::xmlChildren(sent[[basicDepIndex]]), function(v) XML::xmlAttrs(v[[1]])[1]),
+                dependentIdx=sapply(XML::xmlChildren(sent[[basicDepIndex]]), function(v) XML::xmlAttrs(v[[2]])[1]),
                 stringsAsFactors=FALSE)
 
       index = match(depNames, names(df))
@@ -436,11 +468,11 @@ parseAnnoXML = function(xml) {
       out$basicDep = rbind(out$basicDep, df)
     }
 
-    if (!is.null(sent[[4L]]) && length(XML::xmlToDataFrame(sent[[4L]]))) {
-      df = data.frame(sentence=i, XML::xmlToDataFrame(sent[[4L]],stringsAsFactors=FALSE),
-                type=sapply(XML::xmlChildren(sent[[4L]]),function(v) XML::xmlAttrs(v)[[1]]),
-                governorIdx=sapply(XML::xmlChildren(sent[[4L]]), function(v) XML::xmlAttrs(v[[1]])[1]),
-                dependentIdx=sapply(XML::xmlChildren(sent[[4L]]), function(v) XML::xmlAttrs(v[[2]])[1]))
+    if (!is.na(collapsedDepIndex) && length(XML::xmlToDataFrame(sent[[collapsedDepIndex]]))) {
+      df = data.frame(sentence=i, XML::xmlToDataFrame(sent[[collapsedDepIndex]],stringsAsFactors=FALSE),
+                type=sapply(XML::xmlChildren(sent[[collapsedDepIndex]]),function(v) XML::xmlAttrs(v)[[1]]),
+                governorIdx=sapply(XML::xmlChildren(sent[[collapsedDepIndex]]), function(v) XML::xmlAttrs(v[[1]])[1]),
+                dependentIdx=sapply(XML::xmlChildren(sent[[collapsedDepIndex]]), function(v) XML::xmlAttrs(v[[2]])[1]))
 
       index = match(depNames, names(df))
       if (length(index) != ncol(df)) df = df[,index[!is.na(index)]]
@@ -449,11 +481,11 @@ parseAnnoXML = function(xml) {
       out$collapsedDep = rbind(out$collapsedDep, df)
     }
 
-    if (!is.null(sent[[5L]]) && length(XML::xmlToDataFrame(sent[[5L]]))) {
-      df = data.frame(sentence=i, XML::xmlToDataFrame(sent[[5L]],stringsAsFactors=FALSE),
-                type=sapply(XML::xmlChildren(sent[[5L]]),function(v) XML::xmlAttrs(v)[[1]]),
-                governorIdx=sapply(XML::xmlChildren(sent[[5L]]), function(v) XML::xmlAttrs(v[[1]])[1]),
-                dependentIdx=sapply(XML::xmlChildren(sent[[5L]]), function(v) XML::xmlAttrs(v[[2]])[1]))
+    if (!is.na(collapsedProcDepIndex) && length(XML::xmlToDataFrame(sent[[collapsedProcDepIndex]]))) {
+      df = data.frame(sentence=i, XML::xmlToDataFrame(sent[[collapsedProcDepIndex]],stringsAsFactors=FALSE),
+                type=sapply(XML::xmlChildren(sent[[collapsedProcDepIndex]]),function(v) XML::xmlAttrs(v)[[1]]),
+                governorIdx=sapply(XML::xmlChildren(sent[[collapsedProcDepIndex]]), function(v) XML::xmlAttrs(v[[1]])[1]),
+                dependentIdx=sapply(XML::xmlChildren(sent[[collapsedProcDepIndex]]), function(v) XML::xmlAttrs(v[[2]])[1]))
 
       index = match(depNames, names(df))
       if (length(index) != ncol(df)) df = df[,index[!is.na(index)]]
@@ -461,6 +493,44 @@ parseAnnoXML = function(xml) {
 
       out$collapsedProcDep = rbind(out$collapsedProcDep, df)
     }
+
+    if (!is.na(openieIndex) && length(XML::xmlToDataFrame(sent[[openieIndex]]))) {
+
+      these <- XML::xmlChildren(sent[[openieIndex]])
+
+      ids <-
+      cbind(t(sapply(these, function(v) XML::xmlAttrs(v[[1]]))),
+            sapply(these, function(v) XML::xmlValue(v[[1]][[1]])),
+            t(sapply(these, function(v) XML::xmlAttrs(v[[2]]))),
+            sapply(these, function(v) XML::xmlValue(v[[2]][[1]])),
+            t(sapply(these, function(v) XML::xmlAttrs(v[[3]]))),
+            sapply(these, function(v) XML::xmlValue(v[[3]][[1]])))
+
+      ids <- data.frame(ids, stringsAsFactors=FALSE, row.names=NULL)
+      colnames(ids) <- openieNames
+
+      out$openie = rbind(out$openie, ids)
+    }
+
+    # if (!is.na(machineReadingIndex) && length(XML::xmlToDataFrame(sent[[machineReadingIndex]]))) {
+
+    #   these <- XML::xmlChildren(sent[[machineReadingIndex]])
+
+    #   ids <-
+    #   cbind(t(sapply(these, function(v) XML::xmlAttrs(v[[1]]))),
+    #         sapply(these, function(v) XML::xmlValue(v[[1]][[1]])),
+    #         t(sapply(these, function(v) XML::xmlAttrs(v[[2]]))),
+    #         sapply(these, function(v) XML::xmlValue(v[[2]][[1]])),
+    #         t(sapply(these, function(v) XML::xmlAttrs(v[[3]]))),
+    #         sapply(these, function(v) XML::xmlValue(v[[3]][[1]])))
+
+    #   ids <- data.frame(ids, stringsAsFactors=FALSE, row.names=NULL)
+    #   colnames(ids) <- openieNames
+
+
+
+    #   out$mr = rbind(out$mr, ids)
+    # }
 
     sm = XML::xmlAttrs(sent)
     df = data.frame(matrix(sm,nrow=1),stringsAsFactors=FALSE)
