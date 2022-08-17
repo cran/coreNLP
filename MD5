@@ -1,4 +1,4 @@
-9e0cf63d5fbb1ff3e1f2d21cdada82fc *DESCRIPTION
+e24ad13618fe7f966bb6f4879adb95a5 *DESCRIPTION
 39243894c89995343f9d711c545c29e9 *NAMESPACE
 00b6e2e26e8929da9768ffc10a43c88f *R/data.R
 28ba7b817f24fc0493b3ab5453ca44f1 *R/download.R
@@ -15,7 +15,7 @@ b1888401d1ad56e8b3ff8bf8ae5acd3b *inst/extdata/StanfordCoreNLP-english-all.prope
 0393a557efdad17be4b2cb431f0a200e *inst/extdata/StanfordCoreNLP-french.properties
 e353f3479f82e6bc89fae2102883c612 *inst/extdata/StanfordCoreNLP-german.properties
 da0d3f19bb3076872d7da6b9eacadcdf *inst/extdata/StanfordCoreNLP-spanish.properties
-a1705b51ec0f9ff579ccd2eba9897903 *inst/extdata/StanfordCoreNLP.properties
+bbebe55eb84981b9e17b3e4b448444f1 *inst/extdata/StanfordCoreNLP.properties
 55afe5233deb2140bcd5faec99b6afeb *man/annoEtranger.rda.Rd
 0526568d78bf7107061bf8cb44b1ed13 *man/annoHp.rda.Rd
 80ba859ead95ed5e5c4dac36c3cd21db *man/annotateFile.Rd
